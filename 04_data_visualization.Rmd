@@ -1,6 +1,7 @@
 ---
 title: "04 Data Visualization"
-date: "2021-04"
+author: "Vignesh Venkatachalam"
+date: "2021-05"
 output:
   html_document:
     toc: true
@@ -13,42 +14,168 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE)
+knitr::opts_chunk$set(message=FALSE,warning=FALSE, cache=TRUE, align = "center", out.width = "110%")
 ```
 
-**IMPORTANT:** You can delete everything in here and start fresh. You might want to start by not deleting anything above this line until you know what that stuff is doing.
+# Data Visualization
 
-This is an `.Rmd` file. It is plain text with special features. Any time you write just like this, it will be compiled to normal text in the website. If you put a \# in front of your text, it will create a top level-header.
+### Load libraries
 
-# My first post
-
-Last compiled: `r Sys.Date()`
-
-Notice that whatever you define as a top level header, automatically gets put into the table of contents bar on the left. 
-
-## Second level header
-
-You can add more headers by adding more hashtags. These won't be put into the table of contents
-
-### third level header
-
-Here's an even lower level header
-
-# My second post (note the order)
-
-Last compiled: `r Sys.Date()`
-
-I'm writing this tutorial going from the top down. And, this is how it will be printed. So, notice the second post is second in the list. If you want your most recent post to be at the top, then make a new post starting at the top. If you want the oldest first, do, then keep adding to the bottom
-
-# Adding R stuff
-
-So far this is just a blog where you can write in plain text and serve your writing to a webpage. One of the main purposes of this lab journal is to record your progress learning R. The reason I am asking you to use this process is because you can both make a website, and a lab journal, and learn R all in R-studio. This makes everything really convenient and in the same place. 
-
-So, let's say you are learning how to make a histogram in R. For example, maybe you want to sample 100 numbers from a normal distribution with mean = 0, and standard deviation = 1, and then you want to plot a histogram. You can do this right here by using an r code block, like this:
-
-```{r}
-samples <- rnorm(100, mean=0, sd=1)
-hist(samples)
+```{r load-libraries}
+library(tidyverse)
+library(ggthemes)
+library(ggrepel)
+library(lubridate)
+library(maps)
 ```
 
-When you knit this R Markdown document, you will see that the histogram is printed to the page, along with the R code. This document can be set up to hide the R code in the webpage, just delete the comment (hashtag) from the cold folding option in the yaml header up top. For purposes of letting yourself see the code, and me see the code, best to keep it the way that it is. You'll learn that all of these things and more can be customized in each R code block.
+## Challenge 1: Cumulative Cases
+
+### Cumulative Cases Data Wrangling
+
+I have decided not to add data for Europe and only add data by countries.
+
+```{r data-wrangling-cum-cases}
+
+covid_data_tbl <- read_csv("https://covid.ourworldindata.org/data/owid-covid-data.csv") %>% 
+  
+  select(location, date, total_cases) %>% 
+  
+  # Choosing data for 6 countries
+  filter(location == "Germany" | location == "United Kingdom" | location == "France" |
+         location == "Spain" | location == "United States" | location == "India") %>% 
+  
+  # Format cases data to decimal format
+  mutate(cases_format = scales::dollar(total_cases, big.mark = ".",
+                                       decimal.mark = ",",
+                                       prefix = "",
+                                       suffix = ""))
+```
+
+### Plot Cumulative Cases
+
+The time course of cumulative cases is plotted below.
+
+```{r plot-cum-cases}
+covid_data_tbl %>% 
+  
+  ggplot(aes(x = date, y = total_cases, color = location)) +
+  
+  geom_line(size = 1) +
+  
+  # Used the ggrepel package to avoid data labels from overlapping
+  geom_label_repel(aes(x = date, y = total_cases, label = cases_format, fill = location),
+                   vjust = 0.7,
+                   hjust = 1.2,
+                   color = "white",
+                   box.padding = 0.0,
+                   min.segment.length = 0,
+                   segment.color = "grey50",
+                   data  = covid_data_tbl %>% slice(which.max(total_cases))) +
+  
+  # Removing unnecessary legend data
+  guides(fill = FALSE) +
+  
+  expand_limits(y = 0) +
+  
+  scale_color_brewer(palette = "Dark2") +
+  
+  scale_y_continuous(labels = scales::dollar_format(scale = 1e-6,
+                                                    prefix = "",
+                                                    suffix = " M")) +
+  
+  scale_x_date(date_labels = "%B '%y",
+               date_breaks = "1 month",
+               expand = c(0, NA)) +
+  
+  # Labels
+  labs(
+    title = "COVID-19 confirmed cases worldwide",
+    subtitle = "As of 08/05/2021",
+    x = "",
+    y = "Cumulative Cases",
+    color = "Country"
+  ) +
+  
+  # Themes
+  theme_minimal() +
+  theme(
+    legend.position = "bottom",
+    axis.title = element_text(face = "bold"),
+    axis.text.x = element_text(angle = 45, hjust = 1.0)
+  )
+```
+
+## Challenge 2: Mortality Rate
+
+### Mortality Rate Data Wrangling
+
+```{r data-wrangling-mort-rate}
+covid_data_tbl <- read_csv("https://covid.ourworldindata.org/data/owid-covid-data.csv") %>% 
+  
+  mutate(mortality_rate = total_deaths / population) %>% 
+  
+  # Getting the last mortality rate to plot
+  group_by(location) %>% 
+  summarise(latest_mort_rate = last(mortality_rate)) %>% 
+  select(location, latest_mort_rate) %>% 
+  
+  # Taking care of inconsistencies in country names
+  mutate(location = case_when(
+    
+    location == "United Kingdom" ~ "UK",
+    location == "United States" ~ "USA",
+    location == "Democratic Republic of Congo" ~ "Democratic Republic of the Congo",
+    TRUE ~ location
+    
+  )) %>%
+  
+  distinct()
+
+# Map data from the map package
+world <- map_data("world")
+
+covid_map <- merge(x = world, y = covid_data_tbl, by.x = "region", by.y = "location") %>% 
+  select(region, long, lat, latest_mort_rate)
+
+```
+
+### Heat Map of Mortality Rate
+
+The heat map of the mortality rates for the world is plotted below.
+
+```{r heat-map-mort-rate}
+
+covid_map %>% 
+  ggplot() +
+  
+  geom_map(aes(x = long, y = lat, map_id = region, fill = latest_mort_rate), map = world) +
+  
+  # Add border lines for the countries
+  borders("world", colour = "grey70") +
+  
+  # Colour gradient for heat map
+  scale_fill_continuous(labels = scales::percent_format(accuracy = 0.001), 
+                                                        low = "firebrick1", 
+                                                        high = "darkred") +
+  
+  # Labels
+  labs(
+    title = "Confirmed COVID-19 deaths relative to the size of the population",
+    subtitle = "Around 3 Million confirmed COVID-19 deaths worldwide",
+    caption = "Date: 08/05/2021",
+    fill = "Mortality Rate"
+  ) +
+  
+  # Themes
+  theme_minimal() +
+  
+  theme(
+    axis.line = element_blank(),
+    axis.text = element_blank(),
+    axis.ticks = element_blank(),
+    axis.title = element_blank(),
+    title = element_text(color = "black"),
+    legend.position = "right"
+  )
+```
